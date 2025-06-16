@@ -1,53 +1,70 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-import io
+from fastapi.responses import StreamingResponse
+from openai import OpenAI
 from docx import Document
+from io import BytesIO
+import os
+import tempfile
 
 app = FastAPI()
 
-# Enable CORS for your frontend origin(s)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for testing, restrict in production
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.post("/tailor-file")
-async def tailor_file(
-    file: UploadFile = File(...),
-    job_description: str = Form(...)
-):
-    if not job_description or job_description.strip() == "":
-        raise HTTPException(status_code=422, detail="job_description is required")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    # Read uploaded file bytes
-    contents = await file.read()
+def extract_text_from_file(file: UploadFile) -> str:
+    if file.filename.endswith(".txt"):
+        return file.file.read().decode("utf-8")
+    elif file.filename.endswith(".docx"):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(file.file.read())
+            tmp_path = tmp.name
+        doc = Document(tmp_path)
+        return "\n".join([para.text for para in doc.paragraphs])
+    else:
+        raise ValueError("Unsupported file format. Please upload .txt or .docx files.")
 
-    # For demonstration, let's create a new .docx that contains:
-    # - The original filename
-    # - The job description text
-    # - A placeholder for "tailored content"
-    doc = Document()
-    doc.add_heading("Tailored Resume", level=1)
-    doc.add_paragraph(f"Original filename: {file.filename}")
-    doc.add_paragraph("Job Description:")
-    doc.add_paragraph(job_description)
-    doc.add_paragraph("\n---\nTailored content goes here based on resume and job description.")
-
-    # You would put your actual tailoring logic here instead of the above
-
-    # Save to in-memory bytes buffer
-    buffer = io.BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-
-    # Return the docx file as a streaming response
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition": f"attachment; filename=tailored_resume.docx"
-        },
+def generate_tailored_resume(job_description: str, resume_text: str) -> str:
+    prompt = (
+        "You are a professional resume writer. Tailor the following resume for this job description.\n\n"
+        f"Job Description:\n{job_description}\n\n"
+        f"Resume:\n{resume_text}\n\n"
+        "Return only the tailored resume, formatted professionally."
     )
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+    )
+
+    return response.choices[0].message.content
+
+@app.post("/tailor-file")
+async def tailor_resume_file(file: UploadFile = File(...), job_description: str = Form(...)):
+    try:
+        resume_text = extract_text_from_file(file)
+        tailored_resume = generate_tailored_resume(job_description, resume_text)
+
+        doc = Document()
+        for line in tailored_resume.split('\n'):
+            doc.add_paragraph(line)
+
+        buf = BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": "attachment; filename=tailored_resume.docx"}
+        )
+    except Exception as e:
+        return {"error": str(e)}
