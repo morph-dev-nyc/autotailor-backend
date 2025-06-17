@@ -32,7 +32,8 @@ Your task is to improve the wording and structure of the ORIGINAL RESUME below t
 IMPORTANT:
 - DO NOT invent any new experience or roles.
 - ONLY use content from the original resume.
-- You MAY rewrite bullet points, job titles, or phrasing to better match the job description and highlight relevant achievements.
+- You MAY rewrite bullet points or phrasing to better match the job description and highlight relevant achievements.
+- DO NOT add bullets for the job title/company/date line.
 - Preserve all key experiences, especially work history, education, and skills.
 - Modify the wording to be more aligned with the job description without removing original information.
 
@@ -86,9 +87,9 @@ def create_formatted_docx(structured: dict) -> bytes:
     if experience := structured.get("experience"):
         doc.add_heading("Experience", level=2)
         for role in experience:
-            doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})", style='List Bullet')
+            doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})")
             for bullet in role.get("bullets", []):
-                doc.add_paragraph(bullet, style='List Bullet 2')
+                doc.add_paragraph(bullet, style='List Bullet')
 
     if education := structured.get("education"):
         doc.add_heading("Education", level=2)
