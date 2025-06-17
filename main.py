@@ -2,10 +2,11 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from docx import Document
+from docx import Document as DocxDocument
 import io
 import os
 from dotenv import load_dotenv
+from tempfile import NamedTemporaryFile
 
 load_dotenv()
 
@@ -61,11 +62,19 @@ async def tailor_file(
     job_description: str = Form(...)
 ):
     content = await file.read()
-    resume_text = content.decode("utf-8", errors="ignore")
+
+    if file.filename.endswith(".docx"):
+        with NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tmp.write(content)
+            tmp.flush()
+            doc = DocxDocument(tmp.name)
+            resume_text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+    else:
+        resume_text = content.decode("utf-8", errors="ignore")
 
     tailored_text = generate_tailored_resume(resume_text, job_description)
 
-    doc = Document()
+    doc = DocxDocument()
     for line in tailored_text.split("\n"):
         doc.add_paragraph(line)
 
