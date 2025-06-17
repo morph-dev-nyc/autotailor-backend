@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from docx import Document as DocxDocument
@@ -7,7 +7,7 @@ import io
 import os
 import json
 from dotenv import load_dotenv
-from tempfile import NamedTemporaryFile 
+from tempfile import NamedTemporaryFile
 
 load_dotenv()
 
@@ -111,7 +111,9 @@ def create_formatted_docx(structured: dict) -> bytes:
 @app.post("/tailor-file")
 async def tailor_file(
     file: UploadFile = File(...),
-    job_description: str = Form(...)
+    job_description: str = Form(...),
+    linkedin_company: str = Form(""),
+    linkedin_title: str = Form("")
 ):
     content = await file.read()
 
@@ -128,10 +130,24 @@ async def tailor_file(
     if "error" in structured_resume:
         return {"error": structured_resume["error"]}
 
+    # Extract full name from contact (first non-empty line)
+    contact = structured_resume.get("contact", "")
+    full_name = ""
+    if contact:
+        lines = [line.strip() for line in contact.splitlines() if line.strip()]
+        if lines:
+            full_name = lines[0]
+
     buffer = create_formatted_docx(structured_resume)
 
-    return StreamingResponse(
-        buffer,
+    headers = {
+        "X-Full-Name": full_name,
+        "X-LinkedIn-Company": linkedin_company,
+        "X-LinkedIn-Title": linkedin_title,
+    }
+
+    return Response(
+        content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": "attachment; filename=tailored_resume.docx"}
+        headers=headers
     )
