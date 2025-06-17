@@ -145,8 +145,14 @@ async def tailor_file(
 
     # Construct safe filename
     safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
-    safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else "Resume"
-    filename = f"{safe_name}_{safe_title}.docx"
+    safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
+
+    # Prevent repeating the job title
+    if safe_title and safe_title.lower() not in safe_name.lower():
+        filename = f"{safe_name}_{safe_title}.docx"
+    else:
+        filename = f"{safe_name}.docx"
+
 
     return Response(
         content=buffer.getvalue(),
