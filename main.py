@@ -27,7 +27,14 @@ def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
 You are a professional technical resume writer.
 
-Your task is to take the ORIGINAL RESUME below and improve it to align with the JOB DESCRIPTION provided.
+Your task is to improve the wording and structure of the ORIGINAL RESUME below to better align with the JOB DESCRIPTION provided.
+
+IMPORTANT:
+- DO NOT invent any new experience or roles.
+- ONLY use content from the original resume.
+- You MAY rewrite bullet points, job titles, or phrasing to better match the job description and highlight relevant achievements.
+- Preserve all key experiences, especially work history, education, and skills.
+- Modify the wording to be more aligned with the job description without removing original information.
 
 JOB DESCRIPTION:
 {job_description}
@@ -35,15 +42,15 @@ JOB DESCRIPTION:
 ORIGINAL RESUME:
 {resume_text}
 
-Rewrite the resume using these instructions:
+Format your final result as a clean structured JSON object with the following keys:
+- "contact": a one-line string
+- "summary": a short summary paragraph
+- "skills": newline-separated bullet point skills
+- "experience": a list of objects with "title", "company", "date", and "bullets" (list of bullet points)
+- "education": a one-line or multi-line string
+- "certifications": a string
 
-- ONLY use experience, education, and skills from the original resume.
-- Modify job titles, bullet points, and descriptions so that they align with responsibilities and keywords from the job description.
-- Emphasize achievements and duties that are most relevant to the job description.
-- Return a clean structured JSON object with the following keys: "contact", "summary", "skills", "experience", "education", "certifications".
-- Each section should be a string (except experience which should be a list of roles with title, company, date, bullets).
-
-Return only the JSON, no explanations or formatting.
+Return ONLY valid JSON with no code blocks or explanation.
 """
 
     response = client.chat.completions.create(
