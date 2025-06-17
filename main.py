@@ -14,7 +14,7 @@ load_dotenv()
 app = FastAPI()
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMidådleware,
     allow_origins=["*"],  # Set to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
@@ -25,17 +25,19 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
-You are a professional technical resume writer. 
+You are a professional technical resume writer.
 
 Your task is to improve the wording and structure of the ORIGINAL RESUME below to better align with the JOB DESCRIPTION provided.
 
-IMPORTANT:
-- DO NOT invent any new experience or roles.
-- ONLY use content from the original resume.
-- You MAY rewrite bullet points or phrasing to better match the job description and highlight relevant achievements.
-- DO NOT add bullets for the job title/company/date line.
-- Preserve all key experiences, especially work history, education, and skills.
-- Modify the wording to be more aligned with the job description without removing original information.
+STRICT GUIDELINES:
+- DO NOT invent any new experience, roles, certifications, or skills that are not already in the original resume.
+- ONLY rephrase and reorganize existing content to better match the job description.
+- DO NOT fabricate credentials, employers, or projects.
+- Each job description must be summarized in NO MORE THAN 5 bullet points.
+- The total word count of the final resume should be approximately 500 words (±10%).
+- DO NOT add bullets for job titles/companies/dates—only for actual responsibilities or achievements.
+- Preserve all actual experience, education, and skills, but tailor the wording for relevance.
+- If the original resume contains no certifications, the "certifications" field should be left empty or omitted.
 
 JOB DESCRIPTION:
 {job_description}
@@ -47,9 +49,9 @@ Format your final result as a clean structured JSON object with the following ke
 - "contact": a one-line string
 - "summary": a short summary paragraph
 - "skills": newline-separated bullet point skills
-- "experience": a list of objects with "title", "company", "date", and "bullets" (list of bullet points)
+- "experience": a list of objects with "title", "company", "date", and "bullets" (list of bullet points, max 5 each)
 - "education": a one-line or multi-line string
-- "certifications": a string
+- "certifications": a string (only if mentioned in original resume)
 
 Return ONLY valid JSON with no code blocks or explanation.
 """
@@ -88,7 +90,7 @@ def create_formatted_docx(structured: dict) -> bytes:
         doc.add_heading("Experience", level=2)
         for role in experience:
             doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})")
-            for bullet in role.get("bullets", []):
+            for bullet in role.get("bullets", [])[:5]:
                 doc.add_paragraph(bullet, style='List Bullet')
 
     if education := structured.get("education"):
@@ -96,8 +98,9 @@ def create_formatted_docx(structured: dict) -> bytes:
         doc.add_paragraph(education)
 
     if certs := structured.get("certifications"):
-        doc.add_heading("Certifications", level=2)
-        doc.add_paragraph(certs)
+        if certs.strip():  # only include if non-empty
+            doc.add_heading("Certifications", level=2)
+            doc.add_paragraph(certs)
 
     buffer = io.BytesIO()
     doc.save(buffer)
