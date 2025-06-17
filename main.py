@@ -25,19 +25,19 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
-You are a professional technical resume writer.
+You are a professional resume editor.
 
-Your task is to improve the wording and structure of the ORIGINAL RESUME below to better align with the JOB DESCRIPTION provided.
+Your task is to slightly rephrase and reorganize the ORIGINAL RESUME content below to improve clarity, flow, and alignment with the JOB DESCRIPTION. 
 
-STRICT GUIDELINES:
-- DO NOT invent any new experience, roles, certifications, or skills that are not already in the original resume.
-- ONLY rephrase and reorganize existing content to better match the job description.
-- DO NOT fabricate credentials, employers, or projects.
-- Each job description must be summarized in NO MORE THAN 5 bullet points.
-- The total word count of the final resume should be approximately 500 words (±10%).
-- DO NOT add bullets for job titles/companies/dates—only for actual responsibilities or achievements.
-- Preserve all actual experience, education, and skills, but tailor the wording for relevance.
-- If the original resume contains no certifications, the "certifications" field should be left empty or omitted.
+IMPORTANT:
+- You MUST NOT invent any content, certifications, experiences, job titles, tools, or achievements that are not present in the original resume.
+- DO NOT add assumptions or guesses based on the job description.
+- DO NOT infer anything not explicitly stated.
+- The only acceptable changes are rewording existing phrases, optimizing structure, and emphasizing relevant points.
+- Each job entry should contain up to 5 bullet points MAX.
+- Total output should be around 500 words (±10%).
+- If no certifications were in the original resume, leave that section out.
+- Never add extra bullets for titles/companies/dates.
 
 JOB DESCRIPTION:
 {job_description}
@@ -45,21 +45,21 @@ JOB DESCRIPTION:
 ORIGINAL RESUME:
 {resume_text}
 
-Format your final result as a clean structured JSON object with the following keys:
-- "contact": a one-line string
-- "summary": a short summary paragraph
-- "skills": newline-separated bullet point skills
-- "experience": a list of objects with "title", "company", "date", and "bullets" (list of bullet points, max 5 each)
-- "education": a one-line or multi-line string
-- "certifications": a string (only if mentioned in original resume)
+Output a valid JSON with these fields:
+- "contact": string
+- "summary": short paragraph
+- "skills": newline-separated bullets
+- "experience": list of objects ("title", "company", "date", "bullets")
+- "education": string
+- "certifications": string (only if present originally)
 
-Return ONLY valid JSON with no code blocks or explanation.
+ONLY return valid JSON with no extra text.
 """
 
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "You are a helpful and detail-oriented resume rewriting assistant."},
+            {"role": "system", "content": "You are a resume editing assistant that only improves and rephrases existing content without inventing anything."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -91,7 +91,8 @@ def create_formatted_docx(structured: dict) -> bytes:
         for role in experience:
             doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})")
             for bullet in role.get("bullets", [])[:5]:
-                doc.add_paragraph(bullet, style='List Bullet')
+                if bullet.strip():
+                    doc.add_paragraph(bullet.strip(), style='List Bullet')
 
     if education := structured.get("education"):
         doc.add_heading("Education", level=2)
