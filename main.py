@@ -8,7 +8,6 @@ import os
 import json
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
-import re
 
 load_dotenv()
 
@@ -16,14 +15,13 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Set to your frontend domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
@@ -72,8 +70,7 @@ ONLY return valid JSON with no extra text.
     except json.JSONDecodeError:
         return {"error": "Failed to parse GPT response as JSON."}
 
-
-def create_formatted_docx(structured: dict) -> io.BytesIO:
+def create_formatted_docx(structured: dict) -> bytes:
     doc = DocxDocument()
 
     if contact := structured.get("contact"):
@@ -102,7 +99,7 @@ def create_formatted_docx(structured: dict) -> io.BytesIO:
         doc.add_paragraph(education)
 
     if certs := structured.get("certifications"):
-        if certs.strip():  # only include if non-empty
+        if certs.strip():
             doc.add_heading("Certifications", level=2)
             doc.add_paragraph(certs)
 
@@ -111,39 +108,8 @@ def create_formatted_docx(structured: dict) -> io.BytesIO:
     buffer.seek(0)
     return buffer
 
-
 def sanitize_header(value: str) -> str:
-    return ''.join(c for c in value if ord(c) < 128)  # Remove non-ASCII characters
-
-
-def clean_filename_part(text: str) -> str:
-    # Remove non-alphanumeric characters except spaces and dashes
-    text = re.sub(r'[^\w\s-]', '', text)
-    # Normalize whitespace and strip
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-
-def make_filename(full_name: str, job_title: str, company: str) -> str:
-    full_name_clean = clean_filename_part(full_name)
-    job_title_clean = clean_filename_part(job_title)
-    company_clean = clean_filename_part(company)
-
-    # If job title is already in full_name, don't repeat it
-    if job_title_clean.lower() in full_name_clean.lower():
-        parts = [full_name_clean]
-    else:
-        parts = [full_name_clean, job_title_clean]
-
-    if company_clean and company_clean.lower() not in (full_name_clean + job_title_clean).lower():
-        parts.append(company_clean)
-
-    filename = "_".join(parts) + ".docx"
-    # Replace spaces with underscores (optional, safer for filenames)
-    filename = filename.replace(' ', '_')
-
-    return filename
-
+    return ''.join(c for c in value if 32 <= ord(c) < 127)
 
 @app.post("/tailor-file")
 async def tailor_file(
@@ -172,19 +138,20 @@ async def tailor_file(
     if contact:
         lines = [line.strip() for line in contact.splitlines() if line.strip()]
         if lines:
-            full_name = lines[0]
+            # Take first part before '|' if present
+            full_name = lines[0].split("|")[0].strip()
 
     buffer = create_formatted_docx(structured_resume)
 
-    filename = make_filename(full_name, linkedin_title, linkedin_company)
+    # Construct safe filename
+    safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
+    safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else "Resume"
+    filename = f"{safe_name}_{safe_title}.docx"
 
     return Response(
         content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Full-Name": sanitize_header(full_name),
-            "X-LinkedIn-Company": sanitize_header(linkedin_company),
-            "X-LinkedIn-Title": sanitize_header(linkedin_title),
+            "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
