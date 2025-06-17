@@ -5,6 +5,7 @@ from openai import OpenAI
 from docx import Document as DocxDocument
 import io
 import os
+import json
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
 
@@ -22,12 +23,7 @@ app.add_middleware(
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def clean_gpt_response(text: str) -> str:
-    lines = [line.strip() for line in text.splitlines()]
-    cleaned = [line for line in lines if line and not line.startswith("```")]
-    return "\n".join(cleaned)
-
-def generate_tailored_resume(resume_text: str, job_description: str) -> str:
+def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
 You are a professional technical resume writer.
 
@@ -43,16 +39,11 @@ Rewrite the resume using these instructions:
 
 - ONLY use experience, education, and skills from the original resume.
 - Modify job titles, bullet points, and descriptions so that they align with responsibilities and keywords from the job description.
-- Reword the resume using industry language and terminology from the job description without adding fake experience.
 - Emphasize achievements and duties that are most relevant to the job description.
-- Remove excess spacing, markdown formatting, or characters like asterisks, backticks, or triple dashes.
-- Use a clean and modern layout:
-  • One-line contact info at the top
-  • Sections: Summary, Skills, Experience, Education, Certifications
-  • Use plain text bullets (•) where appropriate
-  • Format the result as plain text that can be easily converted to Word (.docx)
+- Return a clean structured JSON object with the following keys: "contact", "summary", "skills", "experience", "education", "certifications".
+- Each section should be a string (except experience which should be a list of roles with title, company, date, bullets).
 
-Return ONLY the final rewritten resume in plain text. Do not include any commentary, code blocks, or explanations.
+Return only the JSON, no explanations or formatting.
 """
 
     response = client.chat.completions.create(
@@ -63,8 +54,47 @@ Return ONLY the final rewritten resume in plain text. Do not include any comment
         ]
     )
 
-    raw_text = response.choices[0].message.content.strip()
-    return clean_gpt_response(raw_text)
+    content = response.choices[0].message.content.strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {"error": "Failed to parse GPT response as JSON."}
+
+def create_formatted_docx(structured: dict) -> bytes:
+    doc = DocxDocument()
+
+    if contact := structured.get("contact"):
+        doc.add_paragraph(contact)
+
+    if summary := structured.get("summary"):
+        doc.add_heading("Summary", level=2)
+        doc.add_paragraph(summary)
+
+    if skills := structured.get("skills"):
+        doc.add_heading("Skills", level=2)
+        for skill in skills.split("\n"):
+            if skill.strip():
+                doc.add_paragraph(skill.strip(), style='List Bullet')
+
+    if experience := structured.get("experience"):
+        doc.add_heading("Experience", level=2)
+        for role in experience:
+            doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})", style='List Bullet')
+            for bullet in role.get("bullets", []):
+                doc.add_paragraph(bullet, style='List Bullet 2')
+
+    if education := structured.get("education"):
+        doc.add_heading("Education", level=2)
+        doc.add_paragraph(education)
+
+    if certs := structured.get("certifications"):
+        doc.add_heading("Certifications", level=2)
+        doc.add_paragraph(certs)
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 @app.post("/tailor-file")
 async def tailor_file(
@@ -82,15 +112,11 @@ async def tailor_file(
     else:
         resume_text = content.decode("utf-8", errors="ignore")
 
-    tailored_text = generate_tailored_resume(resume_text, job_description)
+    structured_resume = generate_structured_resume(resume_text, job_description)
+    if "error" in structured_resume:
+        return {"error": structured_resume["error"]}
 
-    doc = DocxDocument()
-    for line in tailored_text.split("\n"):
-        doc.add_paragraph(line)
-
-    buffer = io.BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
+    buffer = create_formatted_docx(structured_resume)
 
     return StreamingResponse(
         buffer,
