@@ -8,6 +8,7 @@ import os
 import json
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
+import re
 
 load_dotenv()
 
@@ -15,7 +16,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Set to your frontend domain in production
+    allow_origins=["*"],  # Set your frontend domain here in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,7 +71,7 @@ ONLY return valid JSON with no extra text.
     except json.JSONDecodeError:
         return {"error": "Failed to parse GPT response as JSON."}
 
-def create_formatted_docx(structured: dict) -> bytes:
+def create_formatted_docx(structured: dict) -> io.BytesIO:
     doc = DocxDocument()
 
     if contact := structured.get("contact"):
@@ -89,7 +90,10 @@ def create_formatted_docx(structured: dict) -> bytes:
     if experience := structured.get("experience"):
         doc.add_heading("Experience", level=2)
         for role in experience:
-            doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})")
+            title = role.get('title', '')
+            company = role.get('company', '')
+            date = role.get('date', '')
+            doc.add_paragraph(f"{title} – {company} ({date})")
             for bullet in role.get("bullets", [])[:5]:
                 if bullet.strip():
                     doc.add_paragraph(bullet.strip(), style='List Bullet')
@@ -99,7 +103,7 @@ def create_formatted_docx(structured: dict) -> bytes:
         doc.add_paragraph(education)
 
     if certs := structured.get("certifications"):
-        if certs.strip():  # only include if non-empty
+        if certs.strip():
             doc.add_heading("Certifications", level=2)
             doc.add_paragraph(certs)
 
@@ -109,7 +113,15 @@ def create_formatted_docx(structured: dict) -> bytes:
     return buffer
 
 def sanitize_header(value: str) -> str:
-    return ''.join(c for c in value if ord(c) < 128)  # Remove non-ASCII characters
+    if not value:
+        return ""
+    # Remove newlines, tabs, carriage returns, and other control chars
+    value = re.sub(r'[\r\n\t]+', ' ', value)
+    # Keep only printable ASCII characters (space to ~)
+    value = ''.join(c for c in value if 32 <= ord(c) <= 126)
+    # Collapse multiple spaces into one, and trim
+    value = re.sub(r' +', ' ', value).strip()
+    return value
 
 @app.post("/tailor-file")
 async def tailor_file(
