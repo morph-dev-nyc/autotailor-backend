@@ -25,7 +25,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
-You are a professional technical resume writer.
+You are a professional technical resume writer. 
 
 Your task is to improve the wording and structure of the ORIGINAL RESUME below to better align with the JOB DESCRIPTION provided.
 
