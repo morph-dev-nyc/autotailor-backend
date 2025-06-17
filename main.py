@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from openai import OpenAI
 from docx import Document
 import io
@@ -14,7 +13,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Set to specific domain in production
+    allow_origins=["*"],  # Set to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,19 +21,14 @@ app.add_middleware(
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-class TailorRequest(BaseModel):
-    resume_text: str
-    job_description: str
-
 def clean_gpt_response(text: str) -> str:
-    # Remove markdown backticks and blank lines
     lines = [line.strip() for line in text.splitlines()]
     cleaned = [line for line in lines if line and not line.startswith("```")]
     return "\n".join(cleaned)
 
 def generate_tailored_resume(resume_text: str, job_description: str) -> str:
     prompt = f"""
-You are an expert resume writer. Rewrite and polish the resume below to better match the job description.
+You are an expert resume writer. Rewrite and polish the original resume below to better match the job description.
 
 Job Description:
 {job_description}
@@ -43,17 +37,15 @@ Original Resume:
 {resume_text}
 
 Instructions:
-- Tailor the resume to emphasize relevant experience and skills.
-- Remove excess spacing and Markdown (no asterisks, backticks, or ---).
-- Use a clean format:
-  • One-line contact info
-  • Clear sections: Summary, Skills, Experience, Education, Certifications
-  • Use simple bullets (•), no rich formatting
-- Return the improved resume in plain text only.
+- Keep the resume structure and include only experiences from the original resume.
+- Tailor descriptions and phrasing to better align with the job description.
+- Use a clean format with one-line contact info, and clear sections: Summary, Skills, Experience, Education, Certifications.
+- Remove excess spacing and formatting characters like asterisks, markdown, or backticks.
+- Return plain text only, formatted for Word output.
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful and detail-oriented resume rewriting assistant."},
             {"role": "user", "content": prompt}
@@ -68,14 +60,11 @@ async def tailor_file(
     file: UploadFile = File(...),
     job_description: str = Form(...)
 ):
-    # Read uploaded resume file
     content = await file.read()
     resume_text = content.decode("utf-8", errors="ignore")
 
-    # Generate the tailored resume text using OpenAI
     tailored_text = generate_tailored_resume(resume_text, job_description)
 
-    # Convert tailored resume text to .docx format
     doc = Document()
     for line in tailored_text.split("\n"):
         doc.add_paragraph(line)
@@ -87,5 +76,5 @@ async def tailor_file(
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename=tailored_resume.docx"}
+        headers={"Content-Disposition": "attachment; filename=tailored_resume.docx"}
     )
