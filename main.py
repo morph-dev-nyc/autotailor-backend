@@ -138,21 +138,19 @@ async def tailor_file(
     if contact:
         lines = [line.strip() for line in contact.splitlines() if line.strip()]
         if lines:
-            # Take first part before '|' if present
             full_name = lines[0].split("|")[0].strip()
 
     buffer = create_formatted_docx(structured_resume)
 
-    # Construct safe filename
+    # Clean and construct safe filename
     safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
     safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
 
-    # Prevent repeating the job title
+    # Prevent duplicated job title
     if safe_title and safe_title.lower() not in safe_name.lower():
         filename = f"{safe_name}_{safe_title}.docx"
     else:
         filename = f"{safe_name}.docx"
-
 
     return Response(
         content=buffer.getvalue(),
@@ -161,3 +159,4 @@ async def tailor_file(
             "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
+
