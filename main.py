@@ -1,17 +1,20 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from openai import OpenAI
 from docx import Document
-from io import BytesIO
+import io
 import os
-import tempfile
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Set to specific domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,52 +22,70 @@ app.add_middleware(
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def extract_text_from_file(file: UploadFile) -> str:
-    if file.filename.endswith(".txt"):
-        return file.file.read().decode("utf-8")
-    elif file.filename.endswith(".docx"):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            tmp.write(file.file.read())
-            tmp_path = tmp.name
-        doc = Document(tmp_path)
-        return "\n".join([para.text for para in doc.paragraphs])
-    else:
-        raise ValueError("Unsupported file format. Please upload .txt or .docx files.")
+class TailorRequest(BaseModel):
+    resume_text: str
+    job_description: str
 
-def generate_tailored_resume(job_description: str, resume_text: str) -> str:
-    prompt = (
-        "You are a professional resume writer. Tailor the following resume for this job description.\n\n"
-        f"Job Description:\n{job_description}\n\n"
-        f"Resume:\n{resume_text}\n\n"
-        "Return only the tailored resume, formatted professionally."
-    )
+def clean_gpt_response(text: str) -> str:
+    # Remove markdown backticks and blank lines
+    lines = [line.strip() for line in text.splitlines()]
+    cleaned = [line for line in lines if line and not line.startswith("```")]
+    return "\n".join(cleaned)
+
+def generate_tailored_resume(resume_text: str, job_description: str) -> str:
+    prompt = f"""
+You are an expert resume writer. Rewrite and polish the resume below to better match the job description.
+
+Job Description:
+{job_description}
+
+Original Resume:
+{resume_text}
+
+Instructions:
+- Tailor the resume to emphasize relevant experience and skills.
+- Remove excess spacing and Markdown (no asterisks, backticks, or ---).
+- Use a clean format:
+  • One-line contact info
+  • Clear sections: Summary, Skills, Experience, Education, Certifications
+  • Use simple bullets (•), no rich formatting
+- Return the improved resume in plain text only.
+"""
 
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
+        messages=[
+            {"role": "system", "content": "You are a helpful and detail-oriented resume rewriting assistant."},
+            {"role": "user", "content": prompt}
+        ]
     )
 
-    return response.choices[0].message.content
+    raw_text = response.choices[0].message.content.strip()
+    return clean_gpt_response(raw_text)
 
 @app.post("/tailor-file")
-async def tailor_resume_file(file: UploadFile = File(...), job_description: str = Form(...)):
-    try:
-        resume_text = extract_text_from_file(file)
-        tailored_resume = generate_tailored_resume(job_description, resume_text)
+async def tailor_file(
+    file: UploadFile = File(...),
+    job_description: str = Form(...)
+):
+    # Read uploaded resume file
+    content = await file.read()
+    resume_text = content.decode("utf-8", errors="ignore")
 
-        doc = Document()
-        for line in tailored_resume.split('\n'):
-            doc.add_paragraph(line)
+    # Generate the tailored resume text using OpenAI
+    tailored_text = generate_tailored_resume(resume_text, job_description)
 
-        buf = BytesIO()
-        doc.save(buf)
-        buf.seek(0)
+    # Convert tailored resume text to .docx format
+    doc = Document()
+    for line in tailored_text.split("\n"):
+        doc.add_paragraph(line)
 
-        return StreamingResponse(
-            buf,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": "attachment; filename=tailored_resume.docx"}
-        )
-    except Exception as e:
-        return {"error": str(e)}
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename=tailored_resume.docx"}
+    )
