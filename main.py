@@ -7,7 +7,7 @@ import io
 import os
 import json
 from dotenv import load_dotenv
-from tempfile import NamedTemporaryFile 
+from tempfile import NamedTemporaryFile
 
 load_dotenv()
 
@@ -108,6 +108,9 @@ def create_formatted_docx(structured: dict) -> bytes:
     buffer.seek(0)
     return buffer
 
+def sanitize_header(value: str) -> str:
+    return ''.join(c for c in value if ord(c) < 128)  # Remove non-ASCII characters
+
 @app.post("/tailor-file")
 async def tailor_file(
     file: UploadFile = File(...),
@@ -118,7 +121,7 @@ async def tailor_file(
     content = await file.read()
 
     if file.filename.endswith(".docx"):
-        with NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+        with NamedTemporaryFile(delete=True, suffix=".docx") as tmp:
             tmp.write(content)
             tmp.flush()
             doc = DocxDocument(tmp.name)
@@ -130,7 +133,6 @@ async def tailor_file(
     if "error" in structured_resume:
         return {"error": structured_resume["error"]}
 
-    # Extract full name from contact (first non-empty line)
     contact = structured_resume.get("contact", "")
     full_name = ""
     if contact:
@@ -141,9 +143,9 @@ async def tailor_file(
     buffer = create_formatted_docx(structured_resume)
 
     headers = {
-        "X-Full-Name": full_name,
-        "X-LinkedIn-Company": linkedin_company,
-        "X-LinkedIn-Title": linkedin_title,
+        "X-Full-Name": sanitize_header(full_name),
+        "X-LinkedIn-Company": sanitize_header(linkedin_company),
+        "X-LinkedIn-Title": sanitize_header(linkedin_title),
     }
 
     return Response(
