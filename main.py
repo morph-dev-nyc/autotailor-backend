@@ -14,7 +14,7 @@ load_dotenv()
 app = FastAPI()
 
 app.add_middleware(
-    CORSMidådleware,
+    CORSMiddleware,
     allow_origins=["*"],  # Set to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
