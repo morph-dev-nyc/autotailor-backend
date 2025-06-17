@@ -142,15 +142,28 @@ async def tailor_file(
 
     buffer = create_formatted_docx(structured_resume)
 
-    # Clean and construct safe filename
-    safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
-    safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
-
-    # Prevent duplicated job title 
-    if safe_title and safe_title.lower() not in safe_name.lower():
-        filename = f"{safe_name}_{safe_title}.docx"
+    # Extract first and last name only for filename
+    if full_name:
+        name_parts = full_name.split()
+        if len(name_parts) >= 2:
+            safe_name = sanitize_header(f"{name_parts[0]}_{name_parts[-1]}")
+        else:
+            safe_name = sanitize_header(full_name.replace(" ", "_"))
     else:
-        filename = f"{safe_name}.docx"
+        safe_name = "Tailored"
+
+    safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
+    safe_company = sanitize_header(linkedin_company.replace(" ", "_")) if linkedin_company else ""
+
+    filename_parts = [safe_name]
+
+    if safe_title and safe_title.lower() not in safe_name.lower():
+        filename_parts.append(safe_title)
+
+    if safe_company and safe_company.lower() not in safe_name.lower() and safe_company.lower() not in safe_title.lower():
+        filename_parts.append(safe_company)
+
+    filename = "_".join(filename_parts) + ".docx"
 
     return Response(
         content=buffer.getvalue(),
@@ -159,4 +172,3 @@ async def tailor_file(
             "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
-
