@@ -16,13 +16,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Set your frontend domain here in production
+    allow_origins=["*"],  # Set to your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
@@ -71,6 +72,7 @@ ONLY return valid JSON with no extra text.
     except json.JSONDecodeError:
         return {"error": "Failed to parse GPT response as JSON."}
 
+
 def create_formatted_docx(structured: dict) -> io.BytesIO:
     doc = DocxDocument()
 
@@ -90,10 +92,7 @@ def create_formatted_docx(structured: dict) -> io.BytesIO:
     if experience := structured.get("experience"):
         doc.add_heading("Experience", level=2)
         for role in experience:
-            title = role.get('title', '')
-            company = role.get('company', '')
-            date = role.get('date', '')
-            doc.add_paragraph(f"{title} – {company} ({date})")
+            doc.add_paragraph(f"{role.get('title')} – {role.get('company')} ({role.get('date')})")
             for bullet in role.get("bullets", [])[:5]:
                 if bullet.strip():
                     doc.add_paragraph(bullet.strip(), style='List Bullet')
@@ -103,7 +102,7 @@ def create_formatted_docx(structured: dict) -> io.BytesIO:
         doc.add_paragraph(education)
 
     if certs := structured.get("certifications"):
-        if certs.strip():
+        if certs.strip():  # only include if non-empty
             doc.add_heading("Certifications", level=2)
             doc.add_paragraph(certs)
 
@@ -112,16 +111,39 @@ def create_formatted_docx(structured: dict) -> io.BytesIO:
     buffer.seek(0)
     return buffer
 
+
 def sanitize_header(value: str) -> str:
-    if not value:
-        return ""
-    # Remove newlines, tabs, carriage returns, and other control chars
-    value = re.sub(r'[\r\n\t]+', ' ', value)
-    # Keep only printable ASCII characters (space to ~)
-    value = ''.join(c for c in value if 32 <= ord(c) <= 126)
-    # Collapse multiple spaces into one, and trim
-    value = re.sub(r' +', ' ', value).strip()
-    return value
+    return ''.join(c for c in value if ord(c) < 128)  # Remove non-ASCII characters
+
+
+def clean_filename_part(text: str) -> str:
+    # Remove non-alphanumeric characters except spaces and dashes
+    text = re.sub(r'[^\w\s-]', '', text)
+    # Normalize whitespace and strip
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def make_filename(full_name: str, job_title: str, company: str) -> str:
+    full_name_clean = clean_filename_part(full_name)
+    job_title_clean = clean_filename_part(job_title)
+    company_clean = clean_filename_part(company)
+
+    # If job title is already in full_name, don't repeat it
+    if job_title_clean.lower() in full_name_clean.lower():
+        parts = [full_name_clean]
+    else:
+        parts = [full_name_clean, job_title_clean]
+
+    if company_clean and company_clean.lower() not in (full_name_clean + job_title_clean).lower():
+        parts.append(company_clean)
+
+    filename = "_".join(parts) + ".docx"
+    # Replace spaces with underscores (optional, safer for filenames)
+    filename = filename.replace(' ', '_')
+
+    return filename
+
 
 @app.post("/tailor-file")
 async def tailor_file(
@@ -154,14 +176,15 @@ async def tailor_file(
 
     buffer = create_formatted_docx(structured_resume)
 
-    headers = {
-        "X-Full-Name": sanitize_header(full_name),
-        "X-LinkedIn-Company": sanitize_header(linkedin_company),
-        "X-LinkedIn-Title": sanitize_header(linkedin_title),
-    }
+    filename = make_filename(full_name, linkedin_title, linkedin_company)
 
     return Response(
         content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers=headers
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Full-Name": sanitize_header(full_name),
+            "X-LinkedIn-Company": sanitize_header(linkedin_company),
+            "X-LinkedIn-Title": sanitize_header(linkedin_title),
+        }
     )
