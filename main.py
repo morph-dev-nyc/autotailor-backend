@@ -146,7 +146,7 @@ async def tailor_file(
     safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
     safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
 
-    # Prevent duplicated job title
+    # Prevent duplicated job title 
     if safe_title and safe_title.lower() not in safe_name.lower():
         filename = f"{safe_name}_{safe_title}.docx"
     else:
