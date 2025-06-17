@@ -29,20 +29,30 @@ def clean_gpt_response(text: str) -> str:
 
 def generate_tailored_resume(resume_text: str, job_description: str) -> str:
     prompt = f"""
-You are an expert resume writer. Rewrite and polish the original resume below to better match the job description.
+You are a professional technical resume writer.
 
-Job Description:
+Your task is to take the ORIGINAL RESUME below and improve it to align with the JOB DESCRIPTION provided.
+
+JOB DESCRIPTION:
 {job_description}
 
-Original Resume:
+ORIGINAL RESUME:
 {resume_text}
 
-Instructions:
-- Keep the resume structure and include only experiences from the original resume.
-- Tailor descriptions and phrasing to better align with the job description.
-- Use a clean format with one-line contact info, and clear sections: Summary, Skills, Experience, Education, Certifications.
-- Remove excess spacing and formatting characters like asterisks, markdown, or backticks.
-- Return plain text only, formatted for Word output.
+Rewrite the resume using these instructions:
+
+- ONLY use experience, education, and skills from the original resume.
+- Modify job titles, bullet points, and descriptions so that they align with responsibilities and keywords from the job description.
+- Reword the resume using industry language and terminology from the job description without adding fake experience.
+- Emphasize achievements and duties that are most relevant to the job description.
+- Remove excess spacing, markdown formatting, or characters like asterisks, backticks, or triple dashes.
+- Use a clean and modern layout:
+  • One-line contact info at the top
+  • Sections: Summary, Skills, Experience, Education, Certifications
+  • Use plain text bullets (•) where appropriate
+  • Format the result as plain text that can be easily converted to Word (.docx)
+
+Return ONLY the final rewritten resume in plain text. Do not include any commentary, code blocks, or explanations.
 """
 
     response = client.chat.completions.create(
