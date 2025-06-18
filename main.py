@@ -8,7 +8,7 @@ import os
 import json
 import re
 from dotenv import load_dotenv
-from tempfile import NamedTemporaryFile 
+from tempfile import NamedTemporaryFile
 
 load_dotenv()
 
@@ -26,19 +26,15 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
-You are a professional resume editor.
+You are an expert resume editor and ATS optimization specialist.
 
-Your task is to slightly rephrase and reorganize the ORIGINAL RESUME content below to improve clarity, flow, and alignment with the JOB DESCRIPTION. 
+Your task is to tailor the ORIGINAL RESUME below to better match the JOB DESCRIPTION. You must preserve all factual content — do not invent experience — but you should actively rephrase and reorganize the resume to highlight relevant experience, skills, and terminology from the job posting.
 
-IMPORTANT:
-- You MUST NOT invent any content, certifications, experiences, job titles, tools, or achievements that are not present in the original resume.
-- DO NOT add assumptions or guesses based on the job description.
-- DO NOT infer anything not explicitly stated.
-- The only acceptable changes are rewording existing phrases, optimizing structure, and emphasizing relevant points.
-- Each job entry should contain up to 5 bullet points MAX.
-- Total output should be around 500 words (±10%).
-- If no certifications were in the original resume, leave that section out.
-- Never add extra bullets for titles/companies/dates.
+Focus on these goals:
+- Emphasize any relevant experience or tools mentioned in the job posting (only if they already exist in the resume)
+- Replace generic phrases with job-specific terms or keywords used in the description
+- Improve clarity, action orientation, and alignment with ATS keyword matching
+- Reorganize content for readability and impact (but do not make up achievements or companies)
 
 JOB DESCRIPTION:
 {job_description}
@@ -46,21 +42,21 @@ JOB DESCRIPTION:
 ORIGINAL RESUME:
 {resume_text}
 
-Output a valid JSON with these fields:
+Output valid JSON using this structure:
 - "contact": string
-- "summary": short paragraph
+- "summary": short paragraph (include relevant job title and years of experience)
 - "skills": newline-separated bullets
 - "experience": list of objects ("title", "company", "date", "bullets")
 - "education": string
-- "certifications": string (only if present originally)
+- "certifications": string (optional)
 
-ONLY return valid JSON with no extra text.
+Return only valid JSON. No explanations or headers.
 """
 
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "You are a resume editing assistant that only improves and rephrases existing content without inventing anything."},
+            {"role": "system", "content": "You are a resume editing assistant that optimizes content for job alignment and keyword relevance."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -124,13 +120,8 @@ def extract_name_from_contact(contact: str) -> str:
     return ""
 
 def extract_name_from_text(text: str) -> str:
-    """
-    Improved fallback to find a name in the top of the resume.
-    Handles invisible characters and extra formatting.
-    """
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for line in lines[:10]:
-        # Remove special characters
         clean_line = re.sub(r"[^\w\s\-]", "", line)
         match = re.match(r"^([A-Z][a-zA-Z]+)[\s\-]+([A-Z][a-zA-Z]+)$", clean_line)
         if match:
