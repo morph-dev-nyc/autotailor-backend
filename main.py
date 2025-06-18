@@ -1,8 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from docx import Document as DocxDocument  
+from docx import Document as DocxDocument
 import io
 import os
 import json
@@ -24,7 +24,6 @@ app.add_middleware(
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
 You are an expert resume editor and ATS optimization specialist.
@@ -33,9 +32,13 @@ Your task is to tailor the ORIGINAL RESUME below to better match the JOB DESCRIP
 
 Focus on these goals:
 - Emphasize any relevant experience or tools mentioned in the job posting (only if they already exist in the resume)
-- Replace generic phrases with job-specific terms or keywords used in the description
+- Include ATS-friendly keywords from the job description throughout the resume (where factually applicable)
 - Improve clarity, action orientation, and alignment with ATS keyword matching
-- Reorganize content for readability and impact (but do not make up achievements or companies)
+- Reorganize content for readability and impact
+- If the resume does not include an exact match for a job duty, highlight transferable skills and rework related experience to better align with the job responsibilities
+
+⚠️ NEVER fabricate tools, platforms, companies, or duties not already present in the resume.
+✅ If the job description includes responsibilities not mentioned in the resume, generalize or rephrase existing experience to reflect transferable skills (e.g., if the resume says “configured internal software” and the job says “configure Activu software,” emphasize relevance without adding Activu).
 
 JOB DESCRIPTION:
 {job_description}
@@ -68,7 +71,6 @@ Return only valid JSON. No explanations or headers.
         return json.loads(content)
     except json.JSONDecodeError:
         return {"error": "Failed to parse GPT response as JSON."}
-
 
 def create_formatted_docx(structured: dict) -> bytes:
     doc = DocxDocument()
@@ -108,10 +110,8 @@ def create_formatted_docx(structured: dict) -> bytes:
     buffer.seek(0)
     return buffer
 
-
 def sanitize_header(value: str) -> str:
     return ''.join(c for c in value if 32 <= ord(c) < 127)
-
 
 def extract_name_from_contact(contact: str) -> str:
     lines = [line.strip() for line in contact.splitlines() if line.strip()]
@@ -124,7 +124,6 @@ def extract_name_from_contact(contact: str) -> str:
         return f"{match.group(1)} {match.group(2)}"
     return ""
 
-
 def extract_name_from_text(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for line in lines[:10]:
@@ -133,7 +132,6 @@ def extract_name_from_text(text: str) -> str:
         if match:
             return f"{match.group(1)} {match.group(2)}"
     return "Tailored"
-
 
 @app.post("/tailor-file")
 async def tailor_file(
@@ -185,11 +183,13 @@ async def tailor_file(
         }
     )
 
-
 @app.post("/suggest-titles")
 async def suggest_titles(file: UploadFile = File(...)):
     content = await file.read()
     text = content.decode("utf-8", errors="ignore")
+
+    # ✅ Truncate resume content to prevent token overflow
+    truncated_text = text[:3000]
 
     prompt = f"""
 You are a career coach and job market expert.
@@ -198,7 +198,7 @@ These should reflect the candidate's current skill set, experience, and certific
 Return them as a JSON list of strings. Do NOT include explanations or categories.
 
 Resume:
-{text}
+{truncated_text}
 """
 
     response = client.chat.completions.create(
