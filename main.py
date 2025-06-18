@@ -1,8 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from docx import Document as DocxDocument
+from docx import Document as DocxDocument 
 import io
 import os
 import json
@@ -24,6 +24,7 @@ app.add_middleware(
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
 def generate_structured_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"""
 You are an expert resume editor and ATS optimization specialist.
@@ -42,7 +43,7 @@ JOB DESCRIPTION:
 ORIGINAL RESUME:
 {resume_text}
 
-Output valid JSON with these fields:
+Output valid JSON using this structure:
 - "contact": string
 - "summary": short paragraph (include relevant job title and years of experience)
 - "skills": newline-separated bullets
@@ -67,6 +68,7 @@ Return only valid JSON. No explanations or headers.
         return json.loads(content)
     except json.JSONDecodeError:
         return {"error": "Failed to parse GPT response as JSON."}
+
 
 def create_formatted_docx(structured: dict) -> bytes:
     doc = DocxDocument()
@@ -106,8 +108,10 @@ def create_formatted_docx(structured: dict) -> bytes:
     buffer.seek(0)
     return buffer
 
+
 def sanitize_header(value: str) -> str:
     return ''.join(c for c in value if 32 <= ord(c) < 127)
+
 
 def extract_name_from_contact(contact: str) -> str:
     lines = [line.strip() for line in contact.splitlines() if line.strip()]
@@ -120,6 +124,7 @@ def extract_name_from_contact(contact: str) -> str:
         return f"{match.group(1)} {match.group(2)}"
     return ""
 
+
 def extract_name_from_text(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for line in lines[:10]:
@@ -128,6 +133,7 @@ def extract_name_from_text(text: str) -> str:
         if match:
             return f"{match.group(1)} {match.group(2)}"
     return "Tailored"
+
 
 @app.post("/tailor-file")
 async def tailor_file(
@@ -178,3 +184,34 @@ async def tailor_file(
             "file": buffer.getvalue().hex()
         }
     )
+
+
+@app.post("/suggest-titles")
+async def suggest_titles(file: UploadFile = File(...)):
+    content = await file.read()
+    text = content.decode("utf-8", errors="ignore")
+
+    prompt = f"""
+You are a career coach and job market expert.
+Based on the resume below, suggest 5 to 8 realistic U.S. job titles that the candidate is qualified for.
+These should reflect the candidate's current skill set, experience, and certifications, and can come from any industry or domain (not just IT).
+Return them as a JSON list of strings. Do NOT include explanations or categories.
+
+Resume:
+{text}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You suggest alternate job titles based on resume text."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    content = response.choices[0].message.content.strip()
+    try:
+        titles = json.loads(content)
+        return {"titles": titles}
+    except json.JSONDecodeError:
+        return {"titles": []}
