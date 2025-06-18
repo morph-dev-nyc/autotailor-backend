@@ -121,11 +121,18 @@ def extract_name_from_contact(contact: str) -> str:
     match = re.search(r"\b([A-Z][a-z]+) ([A-Z][a-z]+)\b", contact)
     if match:
         return f"{match.group(1)} {match.group(2)}"
-    return "Tailored"
+    return ""
 
 def extract_name_from_text(text: str) -> str:
-    for line in text.splitlines()[:10]:
-        match = re.match(r"^\s*([A-Z][a-z]+) ([A-Z][a-z]+)\s*$", line.strip())
+    """
+    Improved fallback to find a name in the top of the resume.
+    Handles invisible characters and extra formatting.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines[:10]:
+        # Remove special characters
+        clean_line = re.sub(r"[^\w\s\-]", "", line)
+        match = re.match(r"^([A-Z][a-zA-Z]+)[\s\-]+([A-Z][a-zA-Z]+)$", clean_line)
         if match:
             return f"{match.group(1)} {match.group(2)}"
     return "Tailored"
@@ -154,7 +161,7 @@ async def tailor_file(
 
     contact = structured_resume.get("contact", "")
     full_name = extract_name_from_contact(contact)
-    if not full_name or full_name == "Tailored":
+    if not full_name:
         full_name = extract_name_from_text(resume_text)
 
     safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
