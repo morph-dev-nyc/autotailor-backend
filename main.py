@@ -112,13 +112,19 @@ def create_formatted_docx(structured: dict) -> bytes:
 def sanitize_header(value: str) -> str:
     return ''.join(c for c in value if 32 <= ord(c) < 127)
 
-def extract_name_from_text(text: str) -> str:
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    for line in lines[:5]:  # Check first few lines
-        # Look for two capitalized words (basic heuristic for a full name)
-        if re.match(r"^[A-Z][a-z]+(?:[-\s][A-Z][a-z]+)+$", line):
-            return line
-    return ""
+def extract_name_from_contact(contact: str) -> str:
+    # Try to find a name-like pattern: capitalized first and last name
+    lines = [line.strip() for line in contact.splitlines() if line.strip()]
+    if lines:
+        # Remove extra content like email or phone if it's on the first line
+        possible_name = lines[0].split("|")[0].split(",")[0].strip()
+        if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+$", possible_name):
+            return possible_name
+    # Fallback: look for a name anywhere in contact
+    name_match = re.search(r"\b([A-Z][a-z]+) ([A-Z][a-z]+)\b", contact)
+    if name_match:
+        return f"{name_match.group(1)} {name_match.group(2)}"
+    return "Tailored"
 
 @app.post("/tailor-file")
 async def tailor_file(
