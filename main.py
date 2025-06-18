@@ -113,17 +113,21 @@ def sanitize_header(value: str) -> str:
     return ''.join(c for c in value if 32 <= ord(c) < 127)
 
 def extract_name_from_contact(contact: str) -> str:
-    # Try to find a name-like pattern: capitalized first and last name
     lines = [line.strip() for line in contact.splitlines() if line.strip()]
     if lines:
-        # Remove extra content like email or phone if it's on the first line
         possible_name = lines[0].split("|")[0].split(",")[0].strip()
         if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+$", possible_name):
             return possible_name
-    # Fallback: look for a name anywhere in contact
-    name_match = re.search(r"\b([A-Z][a-z]+) ([A-Z][a-z]+)\b", contact)
-    if name_match:
-        return f"{name_match.group(1)} {name_match.group(2)}"
+    match = re.search(r"\b([A-Z][a-z]+) ([A-Z][a-z]+)\b", contact)
+    if match:
+        return f"{match.group(1)} {match.group(2)}"
+    return "Tailored"
+
+def extract_name_from_text(text: str) -> str:
+    for line in text.splitlines()[:10]:
+        match = re.match(r"^\s*([A-Z][a-z]+) ([A-Z][a-z]+)\s*$", line.strip())
+        if match:
+            return f"{match.group(1)} {match.group(2)}"
     return "Tailored"
 
 @app.post("/tailor-file")
@@ -148,19 +152,11 @@ async def tailor_file(
     if "error" in structured_resume:
         return {"error": structured_resume["error"]}
 
-    # Extract name from contact field or raw text
     contact = structured_resume.get("contact", "")
-    full_name = ""
-
-    if contact:
-        lines = [line.strip() for line in contact.splitlines() if line.strip()]
-        if lines:
-            full_name = lines[0].split("|")[0].strip()
-
-    if not full_name:
+    full_name = extract_name_from_contact(contact)
+    if not full_name or full_name == "Tailored":
         full_name = extract_name_from_text(resume_text)
 
-    # Construct clean filename
     safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
     safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
     safe_company = sanitize_header(linkedin_company.replace(" ", "_")) if linkedin_company else ""
