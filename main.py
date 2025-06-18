@@ -6,6 +6,7 @@ from docx import Document as DocxDocument
 import io
 import os
 import json
+import re
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile
 
@@ -111,6 +112,14 @@ def create_formatted_docx(structured: dict) -> bytes:
 def sanitize_header(value: str) -> str:
     return ''.join(c for c in value if 32 <= ord(c) < 127)
 
+def extract_name_from_text(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines[:5]:  # Check first few lines
+        # Look for two capitalized words (basic heuristic for a full name)
+        if re.match(r"^[A-Z][a-z]+(?:[-\s][A-Z][a-z]+)+$", line):
+            return line
+    return ""
+
 @app.post("/tailor-file")
 async def tailor_file(
     file: UploadFile = File(...),
@@ -133,37 +142,32 @@ async def tailor_file(
     if "error" in structured_resume:
         return {"error": structured_resume["error"]}
 
+    # Extract name from contact field or raw text
     contact = structured_resume.get("contact", "")
     full_name = ""
+
     if contact:
         lines = [line.strip() for line in contact.splitlines() if line.strip()]
         if lines:
             full_name = lines[0].split("|")[0].strip()
 
-    buffer = create_formatted_docx(structured_resume)
+    if not full_name:
+        full_name = extract_name_from_text(resume_text)
 
-    # Extract first and last name only for filename
-    if full_name:
-        name_parts = full_name.split()
-        if len(name_parts) >= 2:
-            safe_name = sanitize_header(f"{name_parts[0]}_{name_parts[-1]}")
-        else:
-            safe_name = sanitize_header(full_name.replace(" ", "_"))
-    else:
-        safe_name = "Tailored"
-
+    # Construct clean filename
+    safe_name = sanitize_header(full_name.replace(" ", "_")) if full_name else "Tailored"
     safe_title = sanitize_header(linkedin_title.replace(" ", "_")) if linkedin_title else ""
     safe_company = sanitize_header(linkedin_company.replace(" ", "_")) if linkedin_company else ""
 
     filename_parts = [safe_name]
-
-    if safe_title and safe_title.lower() not in safe_name.lower():
+    if safe_title:
         filename_parts.append(safe_title)
-
-    if safe_company and safe_company.lower() not in safe_name.lower() and safe_company.lower() not in safe_title.lower():
+    if safe_company:
         filename_parts.append(safe_company)
 
     filename = "_".join(filename_parts) + ".docx"
+
+    buffer = create_formatted_docx(structured_resume)
 
     return Response(
         content=buffer.getvalue(),
