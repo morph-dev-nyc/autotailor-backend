@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from docx import Document as DocxDocument 
+from docx import Document as DocxDocument  
 import io
 import os
 import json
