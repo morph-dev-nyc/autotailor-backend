@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from docx import Document as DocxDocument
@@ -42,13 +42,14 @@ JOB DESCRIPTION:
 ORIGINAL RESUME:
 {resume_text}
 
-Output valid JSON using this structure:
+Output valid JSON with these fields:
 - "contact": string
 - "summary": short paragraph (include relevant job title and years of experience)
 - "skills": newline-separated bullets
 - "experience": list of objects ("title", "company", "date", "bullets")
 - "education": string
 - "certifications": string (optional)
+- "highlights": list of 3 to 6 bullet points summarizing the most impactful tailoring changes made
 
 Return only valid JSON. No explanations or headers.
 """
@@ -166,13 +167,14 @@ async def tailor_file(
         filename_parts.append(safe_company)
 
     filename = "_".join(filename_parts) + ".docx"
+    highlights = structured_resume.get("highlights", [])
 
     buffer = create_formatted_docx(structured_resume)
 
-    return Response(
-        content=buffer.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
+    return JSONResponse(
+        content={
+            "filename": filename,
+            "highlights": highlights,
+            "file": buffer.getvalue().hex()
         }
     )
